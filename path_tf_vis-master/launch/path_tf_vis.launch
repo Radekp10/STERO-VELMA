@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="frame_id" />
+  <arg name="max_hist_len" default="100" />
+  <arg name="refresh_rate_Hz" default="5.0" />
+
+  <node
+    name="path_tf_vis_$(arg frame_id)"
+    pkg="path_tf_vis" type="path_tf_vis" output="screen">
+    <param name="frame_id" value="$(arg frame_id)" />
+    <param name="max_hist_len" value="$(arg max_hist_len)" />
+    <param name="refresh_rate_Hz" value="$(arg refresh_rate_Hz)" />
+  </node>
+</launch>

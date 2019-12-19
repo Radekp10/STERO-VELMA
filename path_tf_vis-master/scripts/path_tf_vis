@@ -1,0 +1,105 @@
+#!/usr/bin/env python
+
+# Copyright (c) 2017, Robot Control and Pattern Recognition Group,
+# Institute of Control and Computation Engineering
+# Warsaw University of Technology
+#
+# All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#     * Redistributions of source code must retain the above copyright
+#       notice, this list of conditions and the following disclaimer.
+#     * Redistributions in binary form must reproduce the above copyright
+#       notice, this list of conditions and the following disclaimer in the
+#       documentation and/or other materials provided with the distribution.
+#     * Neither the name of the Warsaw University of Technology nor the
+#       names of its contributors may be used to endorse or promote products
+#       derived from this software without specific prior written permission.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL <COPYright HOLDER> BE LIABLE FOR ANY
+# DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# Author: Dawid Seredynski
+#
+
+import roslib; roslib.load_manifest('path_tf_vis')
+
+import rospy
+import math
+import numpy as np
+import PyKDL
+from geometry_msgs.msg import *
+from nav_msgs.msg import Path
+import tf
+
+if __name__ == "__main__":
+    rospy.init_node('path_tf_vis', anonymous=True)
+
+    frame_id = rospy.get_param('~frame_id')
+    if frame_id is None or frame_id == '':
+        raise Exception('ROS parameter "frame_id" is empty')
+
+    max_hist_len = int(rospy.get_param('~max_hist_len'))
+    refresh_rate_Hz = float(rospy.get_param('~refresh_rate_Hz'))
+
+    rospy.sleep(0.5)
+
+    tf_history = []
+    tf_history_idx = 0
+
+    listener = tf.TransformListener()
+
+    path_pub = rospy.Publisher('/path/' + frame_id, Path, queue_size=1)
+
+    rate = rospy.Rate(refresh_rate_Hz)
+    seq = 0
+    while not rospy.is_shutdown():
+        try:
+            (trans,rot) = listener.lookupTransform('world', frame_id, rospy.Time(0))
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            rate.sleep()
+            continue
+
+        # add transform to history
+        if len(tf_history) < max_hist_len:
+            tf_history.append( (rospy.Time.now(), trans, rot) )
+            tf_history_idx = (tf_history_idx+1)%max_hist_len
+        else:
+            tf_history[tf_history_idx] = (rospy.Time.now(), trans, rot)
+            tf_history_idx = (tf_history_idx+1)%max_hist_len
+
+        path_msg = Path()
+        path_msg.header.seq = seq
+        seq = seq + 1
+        path_msg.header.stamp = rospy.Time.now()
+        path_msg.header.frame_id = 'world'
+
+        for i in range(len(tf_history)):
+            idx = (tf_history_idx + i)%len(tf_history)
+            ps = PoseStamped()
+            stamped_tf = tf_history[idx]
+            ps.header.stamp = stamped_tf[0]
+            ps.pose.position.x = stamped_tf[1][0]
+            ps.pose.position.y = stamped_tf[1][1]
+            ps.pose.position.z = stamped_tf[1][2]
+            ps.pose.orientation.x = stamped_tf[2][0]
+            ps.pose.orientation.y = stamped_tf[2][1]
+            ps.pose.orientation.z = stamped_tf[2][2]
+            ps.pose.orientation.w = stamped_tf[2][3]
+            path_msg.poses.append( ps )
+
+        path_pub.publish(path_msg)
+
+        rate.sleep()
+
+    exit(0)
+
